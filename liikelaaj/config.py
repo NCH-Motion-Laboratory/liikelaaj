@@ -32,6 +32,7 @@ class Config(object):
     text_report_path = data_root_path / 'Raportit'
     excel_report_path = data_root_path / 'Raportit_Excel'
     tmpfile_path = tmp_path / 'liikelaajuus_tmp.json'
+    json_backup_path = Path('Z:/Misc/ROM_backup')
     # prefix of default Excel report filename
     excel_report_prefix = 'Excel_'
     # prefix of default text report filename

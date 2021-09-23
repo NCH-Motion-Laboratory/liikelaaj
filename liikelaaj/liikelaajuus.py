@@ -12,10 +12,12 @@ Design notes:
 
 -input widget naming convention: first 2-3 chars indicate widget type
  (mandatory), next word indicate variable category or page where widget
- resides the rest indicates the variable. E.g. 'lnTiedotNimi'. Specially
- named widgets are automatically recognized as inputs
-
--inputs are updated into an internal dict whenever any value changes
+ resides the rest indicates the variable. E.g. 'lnTiedotNimi'
+ 
+ -specially named widgets are automatically recognized as data inputs:
+ widgets whose names start with one of 'ln', 'sp', 'csb', 'xb', or 'cmt'
+ 
+-data inputs are updated into an internal dict whenever any value changes
 
 -dict keys are taken automatically from widget names by removing first 2-3
  chars (widget type)
@@ -23,6 +25,13 @@ Design notes:
 -for saving, dict data is turned into json unicode and written out in utf-8
 
 -data is saved into temp directory whenever any values are changed by user
+
+-for certain inputs, there is a special value indicating "not measured". For
+text inputs, this is just the empty string. For comboboxes, there is a
+distinct "not measured" value. For spinboxes, Qt supports a special value text
+that will be shown whenever the widget is at its minimum value. When values are
+read from spinboxes, the minimum value is automatically converted (by us) to
+a minimum value string.
 
 -magic mechanism for weight normalized data: widgets can have names ending
 with 'NormUn' which creates a weight unnormalized value. The
