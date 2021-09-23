@@ -18,22 +18,13 @@ TODO:
 -clear fields -> remove (dangerous)
 
 
-
-
 @author: Jussi (jnu@iki.fi)
 """
 
 from PyQt5 import uic, QtCore, QtWidgets
-import sys
-import traceback
-import os
-import json
 import webbrowser
 import logging
-from pathlib import Path
 from pkg_resources import resource_filename
-from ulstools.num import check_hetu
-from ulstools.env import already_running, make_shortcut
 
 from .config import Config
 from .widgets import (
@@ -49,12 +40,12 @@ logger = logging.getLogger(__name__)
 
 
 class EntryApp(QtWidgets.QMainWindow):
-    """Main window of application."""
+    """Data entry window"""
 
     def __init__(self, check_temp_file=True):
         super().__init__()
         # load user interface made with Qt Designer
-        uifile = resource_filename('liikelaaj', 'tabbed_design.ui')
+        uifile = resource_filename('liikelaaj', 'tabbed_design_sql.ui')
         uic.loadUi(uifile, self)
         """
         Explicit tab order needs to be set because Qt does not handle focus correctly
@@ -184,9 +175,9 @@ class EntryApp(QtWidgets.QMainWindow):
             noval = Config.spinbox_novalue_text
             w.setVal(noval if val == noval or weight == noval else val / weight)
 
-        # autowidgets are special widgets with automatically computed values
-        # they must have ._autocalculate() method which updates the widget
-        # and ._autoinputs list which lists needed input widgets
+        # Autowidgets are special widgets with automatically computed values.
+        # They must have an ._autocalculate() method which updates the widget
+        # and ._autoinputs list which lists the necessary input widgets.
         self.autowidgets = list()
         weight_widget = self.spAntropPaino
         for w in allwidgets:
@@ -251,11 +242,6 @@ class EntryApp(QtWidgets.QMainWindow):
                 # TODO: specify whether input value is 'mandatory' or not
                 w.important = False
 
-        self.menuTiedosto.aboutToShow.connect(self._update_menu)
-        self.actionTallennaNimella.triggered.connect(self._save_json_dialog)
-        self.actionTallenna.triggered.connect(self._save_current_file)
-        self.actionAvaa.triggered.connect(self._load_dialog)
-        self.actionTyhjenna.triggered.connect(self._clear_forms_dialog)
         self.actionTekstiraportti.triggered.connect(
             self._save_default_text_report_dialog
         )
@@ -309,14 +295,6 @@ class EntryApp(QtWidgets.QMainWindow):
 
         # FIXME: make sure we always start on 1st tab
 
-    def _update_menu(self):
-        """Update status of menu items"""
-        self.actionTallenna.setEnabled(
-            self.last_saved_filepath is not None
-            and self.last_saved_filepath.is_file()
-            and not self.saved_to_file
-        )
-
     @property
     def units(self):
         """Return dict indicating the units for each variable. This may change
@@ -364,24 +342,6 @@ class EntryApp(QtWidgets.QMainWindow):
         if self.save_to_tmp:
             self.save_temp()
 
-    def load_file(self, path):
-        """Load data from JSON file and restore forms."""
-        with open(path, 'r', encoding='utf-8') as f:
-            data_loaded = json.load(f)
-        keys, loaded_keys = set(self.data), set(data_loaded)
-        # warn the user about key mismatch
-        if keys != loaded_keys:
-            self.keyerror_dialog(keys, loaded_keys)
-        # reset data before load (loaded data might not have all vars)
-        self.data = self.data_empty.copy()
-        # update values (but exclude unknown keys)
-        for key in keys.intersection(loaded_keys):
-            self.data[key] = data_loaded[key]
-        self.restore_forms()
-        self.statusbar.showMessage(
-            ll_msgs.status_loaded.format(filename=str(path), n=self.n_modified())
-        )
-
     def keyerror_dialog(self, origkeys, newkeys):
         """Report missing / unknown keys to user."""
         cmnkeys = origkeys.intersection(newkeys)
@@ -397,38 +357,6 @@ class EntryApp(QtWidgets.QMainWindow):
         # only show the dialog if data was lost (not for missing values)
         if extra_in_new:
             message_dialog(''.join(li))
-
-    def save_file(self, path):
-        """Save data into given file in utf-8 encoding."""
-        with open(path, 'w', encoding='utf-8') as f:
-            f.write(
-                json.dumps(self.data, ensure_ascii=False, indent=True, sort_keys=True)
-            )
-
-    def _save_current_file(self):
-        if self.last_saved_filepath is None:
-            return
-        self.save_file(self.last_saved_filepath)
-        self.saved_to_file = True
-        self.statusbar.showMessage(ll_msgs.status_saved + str(self.last_saved_filepath))
-
-    def _load_dialog(self):
-        """Bring up load dialog and load selected file."""
-        if self.saved_to_file or confirm_dialog(ll_msgs.load_not_saved):
-            fout = QtWidgets.QFileDialog.getOpenFileName(
-                self, ll_msgs.open_title, str(Config.data_root_path), Config.json_filter
-            )
-            path = Path(fout[0])
-            if not path.is_file():
-                return
-            try:
-                self.load_file(path)
-                # subsequent save ops will target this path
-                self.last_saved_filepath = path
-                # consider data saved since it's unmodified at this point
-                self.saved_to_file = True
-            except Config.json_io_exceptions:
-                message_dialog(ll_msgs.cannot_open + str(path))
 
     @property
     def data_with_units(self):
@@ -453,23 +381,6 @@ class EntryApp(QtWidgets.QMainWindow):
         txt = self.make_txt_report(self.text_template)
         self._save_text_report_dialog(txt, Config.text_report_prefix)
 
-    def _save_json_dialog(self):
-        """Bring up save dialog and save data."""
-        # special ops for certain widgets
-        hetu = self.lnTiedotHetu.getVal()
-        if hetu and not check_hetu(hetu):
-            message_dialog(ll_msgs.invalid_hetu)
-        path = self._save_dialog(str(Config.data_root_path), Config.json_filter)
-        if path is None:
-            return
-        try:
-            self.save_file(path)
-            self.saved_to_file = True
-            self.last_saved_filepath = path
-            self.statusbar.showMessage(ll_msgs.status_saved + str(path))
-        except Config.json_io_exceptions:
-            message_dialog(ll_msgs.cannot_save + str(path))
-
     def _save_isokin_text_report_dialog(self):
         """Create isokinetic text report and open dialog for saving it"""
         txt = self.make_txt_report(self.isokin_text_template, include_units=False)
@@ -479,13 +390,6 @@ class EntryApp(QtWidgets.QMainWindow):
         """Create Excel report and open dialog for saving it"""
         wb = self.make_excel_report(self.xls_template)
         self._save_excel_report_dialog(wb)
-
-    def _save_dialog(self, destpath, file_filter):
-        """Save dialog for suggested filename destpath and filter file_filter"""
-        fout = QtWidgets.QFileDialog.getSaveFileName(
-            self, ll_msgs.save_title, str(destpath), file_filter
-        )
-        return None if not fout[0] else Path(fout[0])
 
     def _save_text_report_dialog(self, report_txt, prefix):
         """Bring up save dialog and save text report"""
@@ -534,42 +438,6 @@ class EntryApp(QtWidgets.QMainWindow):
                 widget.selectAll()
                 widget.setFocus()
 
-    def save_temp(self):
-        """Save form input data into temporary backup file. Exceptions will be
-        caught by the fatal exception mechanism."""
-        self.save_file(Config.tmpfile_path)
-        msg = ll_msgs.status_value_change.format(
-            n=self.n_modified(), tmpfile=str(Config.tmpfile_path)
-        )
-        self.statusbar.showMessage(msg)
-
-    def load_temp(self):
-        """Load form input data from temporary backup file."""
-        try:
-            self.load_file(Config.tmpfile_path)
-        except Config.json_io_exceptions:
-            message_dialog(ll_msgs.cannot_open_tmp)
-
-    @staticmethod
-    def rm_temp():
-        """Remove temp file."""
-        if Config.tmpfile_path.is_file():
-            os.remove(Config.tmpfile_path)
-
-    def _clear_forms_dialog(self):
-        """Ask whether to clear forms. If yes, set widget inputs to default
-        values."""
-        if self.saved_to_file:
-            reply = confirm_dialog(ll_msgs.clear)
-        else:
-            reply = confirm_dialog(ll_msgs.clear_not_saved)
-        if reply == QtWidgets.QMessageBox.YesRole:
-            self.data = self.data_empty.copy()
-            self.restore_forms()
-            self.statusbar.showMessage(ll_msgs.status_cleared)
-            self.last_saved_filepath = None
-            self.saved_to_file = True  # empty data assumed 'saved'
-
     def restore_forms(self):
         """Restore widget input values from self.data. Need to disable widget
         callbacks and automatic data saving while programmatic updating of
@@ -588,43 +456,3 @@ class EntryApp(QtWidgets.QMainWindow):
             var = self.widget_to_var[wname]
             self.data[var] = self.input_widgets[wname].getVal()
 
-
-def main():
-
-    # DEBUG: log to console
-    # logging.basicConfig(level=logging.DEBUG)
-
-    """Work around stdout and stderr not being available, if app is run
-    using pythonw.exe on Windows. Without this, exception will be raised
-    e.g. on any print statement."""
-    if sys.platform.find('win') != -1 and sys.executable.find('pythonw') != -1:
-        blackhole = open(os.devnull, 'w')
-        sys.stdout = sys.stderr = blackhole
-
-    app = QtWidgets.QApplication(sys.argv)
-    if not Config.allow_multiple_instances and already_running('liikelaaj'):
-        message_dialog(ll_msgs.already_running)
-        return
-
-    eapp = EntryApp()
-
-    def my_excepthook(type, value, tback):
-        """Custom exception handler for fatal (unhandled) exceptions:
-        report to user via GUI and terminate program."""
-        tb_full = ''.join(traceback.format_exception(type, value, tback))
-        message_dialog(ll_msgs.unhandled_exception + tb_full)
-        # dump traceback to file
-        try:
-            with open(Config.traceback_file, 'w', encoding='utf-8') as f:
-                f.write(tb_full)
-        # here is a danger of infinitely looping the exception hook,
-        # so try to catch any exceptions...
-        except Exception:
-            print('Cannot dump traceback!')
-        sys.__excepthook__(type, value, tback)
-        app.quit()
-
-    sys.excepthook = my_excepthook
-
-    eapp.show()
-    app.exec_()
