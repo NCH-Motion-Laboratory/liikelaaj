@@ -8,23 +8,33 @@ Instead of saving to JSON, this version works directly with a SQL database.
 
 TODO:
 
--update ui file
--app -> callable (is QMainWindow ok?)
--explicit save op -> not needed (database updated after each entry)
--temporary save files -> not needed
--load op -> not needed
+-app should take a sql connection
+    -the database is already open at callers' end
+    -pass cursor as parameter?
+    -need to execute sql statements 
+        -mostly SELECT to fetch data, UPDATE to update it
+        -we are updating a particular record in the ROM table, corresponding to a measurement
+    -we cannot defer sql ops to the caller, since the database needs to be updated on modifications
+        -or maybe we could (via callbacks etc.) but this requires passing json back and forth
+    -when widgets are changed, we run sql updates and commit
+
+-patient info -> must be taken from db, instead of json file
+    -when writing db, json hetu and name keys can be taken from sql
+    -patient related info must be made uneditable (it can be edited from main db app instead)
+
 -reporting -> can keep for now
--patient info -> should be taken from db, instead of json file
--clear fields -> remove (dangerous)
+
 
 
 @author: Jussi (jnu@iki.fi)
 """
 
-from PyQt5 import uic, QtCore, QtWidgets
+from PyQt5 import uic, QtCore, QtWidgets, QtSql
+import sip
 import webbrowser
 import logging
 from pkg_resources import resource_filename
+
 
 from .config import Config
 from .widgets import (
@@ -42,7 +52,7 @@ logger = logging.getLogger(__name__)
 class EntryApp(QtWidgets.QMainWindow):
     """Data entry window"""
 
-    def __init__(self, check_temp_file=True):
+    def __init__(self, database, rom_id):
         super().__init__()
         # load user interface made with Qt Designer
         uifile = resource_filename('liikelaaj', 'tabbed_design_sql.ui')
@@ -64,23 +74,18 @@ class EntryApp(QtWidgets.QMainWindow):
         # save empty form (default states for widgets)
         self.read_forms()
         self.data_empty = self.data.copy()
-        # whether to save to temp file whenever input widget data changes
-        self.save_to_tmp = True
-        # whether last save file is up to date with inputs
-        self.saved_to_file = True
-        # the name of json file where the data was last saved
-        self.last_saved_filepath = None
+        # variable list, mostly for SQL statements
+        self._varlist = ','.join(self.data)
         # whether to update internal dict of variables on input changes
         self.update_dict = True
-        # load tmp file if it exists
-        if Config.tmpfile_path.is_file() and check_temp_file:
-            message_dialog(ll_msgs.temp_found)
-            self.load_temp()
         self.text_template = resource_filename('liikelaaj', Config.text_template)
         self.isokin_text_template = resource_filename(
             'liikelaaj', Config.isokin_text_template
         )
         self.xls_template = resource_filename('liikelaaj', Config.xls_template)
+        self.database = database  # a QSqlDatabase
+        self.rom_id = rom_id  # unique ID for the rom in the database
+        self._read_data()
         # TODO: set locale and options if needed
         # loc = QtCore.QLocale()
         # loc.setNumberOptions(loc.OmitGroupSeparator |
@@ -109,7 +114,7 @@ class EntryApp(QtWidgets.QMainWindow):
             elif val == 2:
                 return w.yes_text
             else:
-                raise Exception('Unexpected checkbox value')
+                raise RuntimeError(f'Unexpected checkbox value: {val} for {w.objectName()}')
 
         def checkbox_setval(w, val):
             """Set checkbox value to enabled for val == yestext and
@@ -119,7 +124,7 @@ class EntryApp(QtWidgets.QMainWindow):
             elif val == w.no_text:
                 w.setCheckState(0)
             else:
-                raise Exception('Unexpected checkbox entry value')
+                raise RuntimeError(f'Unexpected checkbox entry value: {val} for {w.objectName()}')
 
         def combobox_getval(w):
             """Get combobox current choice as text"""
@@ -132,7 +137,7 @@ class EntryApp(QtWidgets.QMainWindow):
             if idx >= 0:
                 w.setCurrentIndex(idx)
             else:
-                raise ValueError('Tried to set combobox to invalid value.')
+                raise ValueError(f'Tried to set combobox to invalid value {val}')
 
         def keyPressEvent_resetOnEsc(obj, event):
             """Special event handler for spinboxes. Resets value (sets it
@@ -312,12 +317,9 @@ class EntryApp(QtWidgets.QMainWindow):
 
     def closeEvent(self, event):
         """Confirm and close application."""
-        if not self.saved_to_file:
-            reply = confirm_dialog(ll_msgs.quit_not_saved)
-        else:
-            reply = confirm_dialog(ll_msgs.quit_)
+        reply = confirm_dialog(ll_msgs.quit_)
         if reply == QtWidgets.QMessageBox.YesRole:
-            self.rm_temp()
+            # cleanup
             event.accept()
         else:
             event.ignore()
@@ -362,6 +364,41 @@ class EntryApp(QtWidgets.QMainWindow):
     def data_with_units(self):
         """Append units to values"""
         return {key: '%s%s' % (self.data[key], self.units[key]) for key in self.data}
+
+    def _read_data(self):
+        """Read the data from database."""
+        query = QtSql.QSqlQuery(self.database)
+        query.prepare(f'SELECT {self._varlist} FROM roms WHERE rom_id == :rom_id')
+        query.bindValue(':rom_id', self.rom_id)
+        query.exec()
+        query.next()
+        if not query.isValid():
+            raise RuntimeError('Internal database error: not a valid record')
+        # convert SQL results into a dict
+        # we need to temporarily disable the QVariant -> Python type
+        # autoconversion, since it converts database NULL values to ''
+        # See https://forum.qt.io/topic/90363/inexplicable-qsqlquerymodel-handling-of-null-value
+        # disable auto conversion of QVariants
+        sip.enableautoconversion(QtCore.QVariant, False)
+        # read the data in QVariant form
+        record_di_qvariant = {var: query.value(k) for k, var in enumerate(self.data)}
+        # deal with the QVariants
+        record_di = dict()
+        for k, v in record_di_qvariant.items():
+            if v.isNull():
+                record_di[k] = None
+            elif not v.isValid():
+                raise RuntimeError('Database read resulted in invalid QVariant')
+            else:
+                record_di[k] = v.value()
+        # restore the auto conversion
+        sip.enableautoconversion(QtCore.QVariant, True)
+        # finally, filter out None values which indicate missing data
+        record_di = {k: v for k, v in record_di.items() if v is not None}
+        # reset data to defaults before update (loaded data might not have all vars)
+        self.data = self.data_empty.copy()
+        self.data |= record_di
+        self.restore_forms()
 
     def make_txt_report(self, template, include_units=True):
         """Create text report from current data"""

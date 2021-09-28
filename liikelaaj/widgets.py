@@ -9,30 +9,33 @@ from . import ll_msgs
 
 
 def confirm_dialog(msg):
-    """ Show yes/no dialog. """
+    """Show yes/no dialog."""
     dlg = QtWidgets.QMessageBox()
     dlg.setText(msg)
     dlg.setWindowTitle(ll_msgs.message_title)
-    dlg.addButton(QtWidgets.QPushButton(ll_msgs.yes_button),
-                  QtWidgets.QMessageBox.YesRole)
-    dlg.addButton(QtWidgets.QPushButton(ll_msgs.no_button),
-                  QtWidgets.QMessageBox.NoRole)
+    dlg.addButton(
+        QtWidgets.QPushButton(ll_msgs.yes_button), QtWidgets.QMessageBox.YesRole
+    )
+    dlg.addButton(
+        QtWidgets.QPushButton(ll_msgs.no_button), QtWidgets.QMessageBox.NoRole
+    )
     dlg.exec_()
     return dlg.buttonRole(dlg.clickedButton())
 
 
 def message_dialog(msg):
-    """ Show message with an 'OK' button. """
+    """Show message with an 'OK' button."""
     dlg = QtWidgets.QMessageBox()
     dlg.setWindowTitle(ll_msgs.message_title)
     dlg.setText(msg)
-    dlg.addButton(QtWidgets.QPushButton(ll_msgs.ok_button),
-                  QtWidgets.QMessageBox.YesRole)
+    dlg.addButton(
+        QtWidgets.QPushButton(ll_msgs.ok_button), QtWidgets.QMessageBox.YesRole
+    )
     dlg.exec_()
 
 
 class MyLineEdit(QtWidgets.QLineEdit):
-    """ Custom line edit that selects the input on mouse click. """
+    """Custom line edit that selects the input on mouse click."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -42,15 +45,15 @@ class MyLineEdit(QtWidgets.QLineEdit):
         self.selectAll()
 
     def mouseReleaseEvent(self, event):
-        """ Make drag & release select all too (prevent selection
-        of partial text) """
+        """Make drag & release select all too (prevent selection
+        of partial text)"""
         super().mouseReleaseEvent(event)
         self.selectAll()
 
 
 class DegLineEdit(QtWidgets.QLineEdit):
-    """ Custom line edit for CheckDegSpinBox class. Catches space key and
-    passes it to CheckDegSpinBox. """
+    """Custom line edit for CheckDegSpinBox class. Catches space key and
+    passes it to CheckDegSpinBox."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -60,8 +63,8 @@ class DegLineEdit(QtWidgets.QLineEdit):
         self.selectAll()
 
     def mouseReleaseEvent(self, event):
-        """ Make drag & release select all too (prevent selection of
-        partial text) """
+        """Make drag & release select all too (prevent selection of
+        partial text)"""
         super().mouseReleaseEvent(event)
         self.selectAll()
 
@@ -74,20 +77,21 @@ class DegLineEdit(QtWidgets.QLineEdit):
 
 
 class CheckDegSpinBox(QtWidgets.QWidget):
-    """ Custom widget: Spinbox (degrees) with checkbox signaling
+    """Custom widget: Spinbox (degrees) with checkbox signaling
     "default value". If checkbox is checked, disable spinbox,
     in which case value() will return
     the default value shown next to checkbox (defaultText property).
     Otherwise value() will return the spinbox value.
     setValue() takes either the default value, the 'special value'
-    (not measured) or  integer.
+    (not measured) or integer.
     """
+
     # signal has to be defined here for unclear reasons
     # note that currently the value is not returned by the signal
     # (unlike in the Qt spinbox)
     valueChanged = QtCore.pyqtSignal()
     # for Qt designer
-    __pyqtSignals__ = ('valueChanged')
+    __pyqtSignals__ = 'valueChanged'
 
     def __init__(self, parent=None):
         super(CheckDegSpinBox, self).__init__(parent)
@@ -96,8 +100,9 @@ class CheckDegSpinBox(QtWidgets.QWidget):
         self.degSpinBox.setMinimumSize(100, 0)
 
         self.normalCheckBox = QtWidgets.QCheckBox()
-        self.normalCheckBox.stateChanged.connect(lambda state:
-                                                 self.setSpinBox(not state))
+        self.normalCheckBox.stateChanged.connect(
+            lambda state: self.setSpinBox(not state)
+        )
 
         # default text
         layout = QtWidgets.QHBoxLayout(self)
@@ -137,6 +142,7 @@ class CheckDegSpinBox(QtWidgets.QWidget):
 
     """ Set some values as Qt properties, mostly so that they can be easily
     changed from Qt Designer. """
+
     def setDefaultText(self, text):
         self.normalCheckBox.setText(text)
 
@@ -161,8 +167,7 @@ class CheckDegSpinBox(QtWidgets.QWidget):
     def getMaximum(self):
         return self.degSpinBox.maximum()
 
-    defaultText = QtCore.pyqtProperty('QString', getDefaultText,
-                                      setDefaultText)
+    defaultText = QtCore.pyqtProperty('QString', getDefaultText, setDefaultText)
     suffix = QtCore.pyqtProperty('QString', getSuffix, setSuffix)
     minimum = QtCore.pyqtProperty('int', getMinimum, setMinimum)
     maximum = QtCore.pyqtProperty('int', getMaximum, setMaximum)
@@ -194,7 +199,7 @@ class CheckDegSpinBox(QtWidgets.QWidget):
         self.degSpinBox.setFocus()
 
     def setSpinBox(self, state):
-        """ Enables or disables spinbox input. Also emit valueChanged. """
+        """Enables or disables spinbox input. Also emit valueChanged."""
         if state and not self.isEnabled():
             self.degSpinBox.setEnabled(True)
             self.degSpinBox.setFocusPolicy(QtCore.Qt.StrongFocus)
