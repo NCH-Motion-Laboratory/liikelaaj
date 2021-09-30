@@ -29,8 +29,8 @@ TODO:
 @author: Jussi (jnu@iki.fi)
 """
 
-from PyQt5 import uic, QtCore, QtWidgets, QtSql
-import sip
+import sqlite3
+from PyQt5 import uic, QtCore, QtWidgets
 import webbrowser
 import logging
 from pkg_resources import resource_filename
@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 class EntryApp(QtWidgets.QMainWindow):
     """Data entry window"""
 
-    def __init__(self, database, rom_id):
+    def __init__(self, db_name, rom_id):
         super().__init__()
         # load user interface made with Qt Designer
         uifile = resource_filename('liikelaaj', 'tabbed_design_sql.ui')
@@ -83,7 +83,10 @@ class EntryApp(QtWidgets.QMainWindow):
             'liikelaaj', Config.isokin_text_template
         )
         self.xls_template = resource_filename('liikelaaj', Config.xls_template)
-        self.database = database  # a QSqlDatabase
+        # DB setup
+        self.conn = sqlite3.connect(db_name)
+        self.cr = self.conn.cursor()
+        self.cr.execute('PRAGMA foreign_keys = ON;')
         self.rom_id = rom_id  # unique ID for the rom in the database
         self._read_data()
         # TODO: set locale and options if needed
@@ -114,7 +117,9 @@ class EntryApp(QtWidgets.QMainWindow):
             elif val == 2:
                 return w.yes_text
             else:
-                raise RuntimeError(f'Unexpected checkbox value: {val} for {w.objectName()}')
+                raise RuntimeError(
+                    f'Unexpected checkbox value: {val} for {w.objectName()}'
+                )
 
         def checkbox_setval(w, val):
             """Set checkbox value to enabled for val == yestext and
@@ -124,7 +129,9 @@ class EntryApp(QtWidgets.QMainWindow):
             elif val == w.no_text:
                 w.setCheckState(0)
             else:
-                raise RuntimeError(f'Unexpected checkbox entry value: {val} for {w.objectName()}')
+                raise RuntimeError(
+                    f'Unexpected checkbox entry value: {val} for {w.objectName()}'
+                )
 
         def combobox_getval(w):
             """Get combobox current choice as text"""
@@ -330,7 +337,7 @@ class EntryApp(QtWidgets.QMainWindow):
         webbrowser.open(Config.help_url)
 
     def values_changed(self, w):
-        """Called whenever widget w value changes"""
+        """Called whenever value of a widget (w) changes"""
         # find autowidgets that depend on w and update them
         autowidgets_this = [
             widget for widget in self.autowidgets if w in widget._autoinputs
@@ -339,10 +346,12 @@ class EntryApp(QtWidgets.QMainWindow):
             widget._autocalculate()
         if self.update_dict:  # update internal data dict
             wname = w.objectName()
-            self.data[self.widget_to_var[wname]] = w.getVal()
-        self.saved_to_file = False
-        if self.save_to_tmp:
-            self.save_temp()
+            varname = self.widget_to_var[wname]
+            newval = w.getVal()
+            self.data[varname] = newval
+            query = f'UPDATE roms SET {varname}=:newval WHERE rom_id=:rom_id'
+            self.cr.execute(query, {'varname': varname, 'newval': newval, 'rom_id': self.rom_id})
+            self.conn.commit()
 
     def keyerror_dialog(self, origkeys, newkeys):
         """Report missing / unknown keys to user."""
@@ -363,41 +372,21 @@ class EntryApp(QtWidgets.QMainWindow):
     @property
     def data_with_units(self):
         """Append units to values"""
-        return {key: '%s%s' % (self.data[key], self.units[key]) for key in self.data}
+        return {key: f'{self.data[key]}{self.units[key]}' for key in self.data}
 
     def _read_data(self):
-        """Read the data from database."""
-        query = QtSql.QSqlQuery(self.database)
-        query.prepare(f'SELECT {self._varlist} FROM roms WHERE rom_id == :rom_id')
-        query.bindValue(':rom_id', self.rom_id)
-        query.exec()
-        query.next()
-        if not query.isValid():
-            raise RuntimeError('Internal database error: not a valid record')
-        # convert SQL results into a dict
-        # we need to temporarily disable the QVariant -> Python type
-        # autoconversion, since it converts database NULL values to ''
-        # See https://forum.qt.io/topic/90363/inexplicable-qsqlquerymodel-handling-of-null-value
-        # disable auto conversion of QVariants
-        sip.enableautoconversion(QtCore.QVariant, False)
-        # read the data in QVariant form
-        record_di_qvariant = {var: query.value(k) for k, var in enumerate(self.data)}
-        # deal with the QVariants
-        record_di = dict()
-        for k, v in record_di_qvariant.items():
-            if v.isNull():
-                record_di[k] = None
-            elif not v.isValid():
-                raise RuntimeError('Database read resulted in invalid QVariant')
-            else:
-                record_di[k] = v.value()
-        # restore the auto conversion
-        sip.enableautoconversion(QtCore.QVariant, True)
-        # finally, filter out None values which indicate missing data
-        record_di = {k: v for k, v in record_di.items() if v is not None}
-        # reset data to defaults before update (loaded data might not have all vars)
-        self.data = self.data_empty.copy()
-        self.data |= record_di
+        """Read input data from database"""
+        query = f'SELECT {self._varlist} FROM roms WHERE rom_id=:rom_id'
+        self.cr.execute(query, {'rom_id': self.rom_id})
+        if (row := self.cr.fetchone()) is None:
+            raise RuntimeError('Database error: no results for given id')
+        # pick only the values which are non-NULL in the database
+        record_di = {
+            var: val
+            for var, val in zip(self.data, row)
+            if val is not None
+        }
+        self.data = self.data_empty | record_di
         self.restore_forms()
 
     def make_txt_report(self, template, include_units=True):
@@ -492,4 +481,3 @@ class EntryApp(QtWidgets.QMainWindow):
         for wname in self.input_widgets:
             var = self.widget_to_var[wname]
             self.data[var] = self.input_widgets[wname].getVal()
-
