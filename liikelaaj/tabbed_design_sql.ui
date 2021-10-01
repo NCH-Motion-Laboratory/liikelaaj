@@ -159,7 +159,7 @@
            </widget>
           </item>
           <item row="0" column="2">
-           <widget class="QLineEdit" name="xxFirstname">
+           <widget class="QLineEdit" name="rdonly_firstname">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
               <horstretch>0</horstretch>
@@ -178,7 +178,7 @@
            </widget>
           </item>
           <item row="1" column="2">
-           <widget class="QLineEdit" name="xxLastname">
+           <widget class="QLineEdit" name="rdonly_lastname">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
               <horstretch>0</horstretch>
@@ -197,7 +197,7 @@
            </widget>
           </item>
           <item row="2" column="2">
-           <widget class="QLineEdit" name="xxSSN">
+           <widget class="QLineEdit" name="rdonly_ssn">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
               <horstretch>0</horstretch>
@@ -216,7 +216,7 @@
            </widget>
           </item>
           <item row="3" column="2">
-           <widget class="QLineEdit" name="xxPatientCode">
+           <widget class="QLineEdit" name="rdonly_patient_code">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
               <horstretch>0</horstretch>

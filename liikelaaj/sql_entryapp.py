@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 class EntryApp(QtWidgets.QMainWindow):
     """Data entry window"""
 
-    def __init__(self, db_name, patient_name, rom_id):
+    def __init__(self, db_name, rom_id):
         super().__init__()
         # load user interface made with Qt Designer
         uifile = resource_filename('liikelaaj', 'tabbed_design_sql.ui')
@@ -68,8 +68,8 @@ class EntryApp(QtWidgets.QMainWindow):
         It should be regenerated whenever new widgets are introduced that are part of the focus chain.
         Before that, define focus chain in Qt Designer.
         """
-        #taborder_file = resource_filename('liikelaaj', 'fix_taborder.py')
-        #exec(open(taborder_file, "rb").read())
+        # taborder_file = resource_filename('liikelaaj', 'fix_taborder.py')
+        # exec(open(taborder_file, "rb").read())
         self.init_widgets()
         self.data = {}
         # save empty form (default states for widgets)
@@ -90,11 +90,26 @@ class EntryApp(QtWidgets.QMainWindow):
         self.cr.execute('PRAGMA foreign_keys = ON;')
         self.rom_id = rom_id  # unique ID for the rom in the database
         self._read_data()
+        self.init_readonly_fields()
         # TODO: set locale and options if needed
         # loc = QtCore.QLocale()
         # loc.setNumberOptions(loc.OmitGroupSeparator |
         #            loc.RejectGroupSeparator)
-        
+
+    def init_readonly_fields(self):
+        """Fill the read-only patient info widgets"""
+        query = f'SELECT patient_id FROM roms WHERE rom_id=:rom_id'
+        self.cr.execute(query, {'rom_id': self.rom_id})
+        if (row := self.cr.fetchone()) is None:
+            raise RuntimeError('Database error: no patient for given ROM id')
+        patient_id = row[0]
+        vars = 'firstname,lastname,ssn,patient_code'
+        query = f'SELECT {vars} FROM patients WHERE patient_id=:patient_id'
+        self.cr.execute(query, {'patient_id': patient_id})
+        for var, val in zip(vars.split(','), self.cr.fetchone()):
+            # automatically compose the widget name and set content to corresponding variable
+            widget_name = 'rdonly_' + var
+            self.__dict__[widget_name].setText(val)
 
     def init_widgets(self):
         """Make a dict of our input widgets and install some callbacks and
@@ -276,7 +291,7 @@ class EntryApp(QtWidgets.QMainWindow):
         Only needed for spinbox / lineedit widgets. """
         self.firstwidget = dict()
         # TODO: check/fix
-        self.firstwidget[self.tabTiedot] = self.xxFirstname
+        self.firstwidget[self.tabTiedot] = self.rdonly_firstname
         self.firstwidget[self.tabKysely] = self.lnKyselyPaivittainenMatka
         self.firstwidget[self.tabAntrop] = self.spAntropAlaraajaOik
         self.firstwidget[self.tabLonkka] = self.csbLonkkaFleksioOik
@@ -352,7 +367,9 @@ class EntryApp(QtWidgets.QMainWindow):
             newval = w.getVal()
             self.data[varname] = newval
             query = f'UPDATE roms SET {varname}=:newval WHERE rom_id=:rom_id'
-            self.cr.execute(query, {'varname': varname, 'newval': newval, 'rom_id': self.rom_id})
+            self.cr.execute(
+                query, {'varname': varname, 'newval': newval, 'rom_id': self.rom_id}
+            )
             self.conn.commit()
 
     def keyerror_dialog(self, origkeys, newkeys):
@@ -383,11 +400,7 @@ class EntryApp(QtWidgets.QMainWindow):
         if (row := self.cr.fetchone()) is None:
             raise RuntimeError('Database error: no results for given id')
         # pick only the values which are non-NULL in the database
-        record_di = {
-            var: val
-            for var, val in zip(self.data, row)
-            if val is not None
-        }
+        record_di = {var: val for var, val in zip(self.data, row) if val is not None}
         self.data = self.data_empty | record_di
         self.restore_forms()
 
