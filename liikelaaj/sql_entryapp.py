@@ -18,9 +18,10 @@ TODO:
         -or maybe we could (via callbacks etc.) but this requires passing json back and forth
     -when widgets are changed, we run sql updates and commit
 
--patient info -> must be taken from db, instead of json file
-    -when writing db, json hetu and name keys can be taken from sql
-    -patient related info must be made uneditable (it can be edited from main db app instead)
+-patient info -> must be taken from patients table, not rom table
+    -do we keep the rom patient info widgets, or not?
+        -can hide the tab
+    
 
 -reporting -> can keep for now
 
@@ -52,7 +53,7 @@ logger = logging.getLogger(__name__)
 class EntryApp(QtWidgets.QMainWindow):
     """Data entry window"""
 
-    def __init__(self, db_name, rom_id):
+    def __init__(self, db_name, patient_name, rom_id):
         super().__init__()
         # load user interface made with Qt Designer
         uifile = resource_filename('liikelaaj', 'tabbed_design_sql.ui')
@@ -67,8 +68,8 @@ class EntryApp(QtWidgets.QMainWindow):
         It should be regenerated whenever new widgets are introduced that are part of the focus chain.
         Before that, define focus chain in Qt Designer.
         """
-        taborder_file = resource_filename('liikelaaj', 'fix_taborder.py')
-        exec(open(taborder_file, "rb").read())
+        #taborder_file = resource_filename('liikelaaj', 'fix_taborder.py')
+        #exec(open(taborder_file, "rb").read())
         self.init_widgets()
         self.data = {}
         # save empty form (default states for widgets)
@@ -93,6 +94,7 @@ class EntryApp(QtWidgets.QMainWindow):
         # loc = QtCore.QLocale()
         # loc.setNumberOptions(loc.OmitGroupSeparator |
         #            loc.RejectGroupSeparator)
+        
 
     def init_widgets(self):
         """Make a dict of our input widgets and install some callbacks and
@@ -274,7 +276,7 @@ class EntryApp(QtWidgets.QMainWindow):
         Only needed for spinbox / lineedit widgets. """
         self.firstwidget = dict()
         # TODO: check/fix
-        self.firstwidget[self.tabTiedot] = self.lnTiedotNimi
+        self.firstwidget[self.tabTiedot] = self.xxFirstname
         self.firstwidget[self.tabKysely] = self.lnKyselyPaivittainenMatka
         self.firstwidget[self.tabAntrop] = self.spAntropAlaraajaOik
         self.firstwidget[self.tabLonkka] = self.csbLonkkaFleksioOik
