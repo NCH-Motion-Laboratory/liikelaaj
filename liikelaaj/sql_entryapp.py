@@ -30,7 +30,7 @@ TODO:
 @author: Jussi (jnu@iki.fi)
 """
 
-import sqlite3
+import sip
 from PyQt5 import uic, QtCore, QtWidgets
 import webbrowser
 import logging
@@ -50,10 +50,28 @@ from . import reporter, ll_msgs
 logger = logging.getLogger(__name__)
 
 
+def pyqt_disable_autoconv(func):
+    """Disable Qt type autoconversion for a function.
+    
+    PyQt functions decorated with this will return QVariants from many Qt
+    functions, instead of native Python types. The QVariants then need to be
+    converted manually, often using value(). 
+    """
+    def wrapper(*args, **kwargs):
+        sip.enableautoconversion(QtCore.QVariant, False)
+        res = func(*args, **kwargs)
+        sip.enableautoconversion(QtCore.QVariant, True)
+        return res
+    return wrapper
+       
+
+
+
+
 class EntryApp(QtWidgets.QMainWindow):
     """Data entry window"""
 
-    def __init__(self, db_name, rom_id):
+    def __init__(self, patient_model, rom_model, patient_idx, rom_idx):
         super().__init__()
         # load user interface made with Qt Designer
         uifile = resource_filename('liikelaaj', 'tabbed_design_sql.ui')
@@ -84,13 +102,12 @@ class EntryApp(QtWidgets.QMainWindow):
             'liikelaaj', Config.isokin_text_template
         )
         self.xls_template = resource_filename('liikelaaj', Config.xls_template)
-        # DB setup
-        self.conn = sqlite3.connect(db_name)
-        self.cr = self.conn.cursor()
-        self.cr.execute('PRAGMA foreign_keys = ON;')
-        self.rom_id = rom_id  # unique ID for the rom in the database
+        self.rom_model = rom_model
+        self.patient_model = patient_model
+        self.rom_idx = rom_idx
+        self.patient_idx = patient_idx
         self._read_data()
-        self.init_readonly_fields()
+        #self.init_readonly_fields()
         # TODO: set locale and options if needed
         # loc = QtCore.QLocale()
         # loc.setNumberOptions(loc.OmitGroupSeparator |
@@ -98,6 +115,10 @@ class EntryApp(QtWidgets.QMainWindow):
 
     def init_readonly_fields(self):
         """Fill the read-only patient info widgets"""
+        patient_id = self.rom_model.
+
+
+
         query = f'SELECT patient_id FROM roms WHERE rom_id=:rom_id'
         self.cr.execute(query, {'rom_id': self.rom_id})
         if (row := self.cr.fetchone()) is None:
@@ -393,14 +414,16 @@ class EntryApp(QtWidgets.QMainWindow):
         """Append units to values"""
         return {key: f'{self.data[key]}{self.units[key]}' for key in self.data}
 
+    @pyqt_disable_autoconv
     def _read_data(self):
         """Read input data from database"""
-        query = f'SELECT {self._varlist} FROM roms WHERE rom_id=:rom_id'
-        self.cr.execute(query, {'rom_id': self.rom_id})
-        if (row := self.cr.fetchone()) is None:
-            raise RuntimeError('Database error: no results for given id')
+        ncols = self.rom_model.columnCount()
+        rown = self.rom_idx.row()
+        headers = (self.rom_model.headerData(k, QtCore.Qt.Horizontal).value() for k in range(ncols))
+        data = (self.rom_model.data(self.rom_idx.sibling(rown, k), QtCore.Qt.EditRole) for k in range(ncols))
+        data = (x.value() if not x.isNull() else None for x in data)
         # pick only the values which are non-NULL in the database
-        record_di = {var: val for var, val in zip(self.data, row) if val is not None}
+        record_di = {var: val for var, val in zip(headers, data) if val is not None}
         self.data = self.data_empty | record_di
         self.restore_forms()
 
