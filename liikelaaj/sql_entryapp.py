@@ -71,7 +71,7 @@ def pyqt_disable_autoconv(func):
 class EntryApp(QtWidgets.QMainWindow):
     """Data entry window"""
 
-    def __init__(self, patient_model, rom_model, patient_idx, rom_idx):
+    def __init__(self, patient_model, rom_model, rom_idx):
         super().__init__()
         # load user interface made with Qt Designer
         uifile = resource_filename('liikelaaj', 'tabbed_design_sql.ui')
@@ -104,31 +104,32 @@ class EntryApp(QtWidgets.QMainWindow):
         self.xls_template = resource_filename('liikelaaj', Config.xls_template)
         self.rom_model = rom_model
         self.patient_model = patient_model
-        self.rom_idx = rom_idx
-        self.patient_idx = patient_idx
+        self.rom_idx = rom_idx  # a QModelIndex for the desired ROM
+        self.rom_record = self.rom_model.record(rom_idx.row())  # convenience
         self._read_data()
-        #self.init_readonly_fields()
+        self.init_readonly_fields()
         # TODO: set locale and options if needed
         # loc = QtCore.QLocale()
         # loc.setNumberOptions(loc.OmitGroupSeparator |
         #            loc.RejectGroupSeparator)
 
+    @property
+    def patient_record(self):
+        """The patient record corresponding to the ROM record"""
+        patient_id = self.rom_record.value('patient_id')
+        for row in range(self.patient_model.rowCount()):
+            record = self.patient_model.record(row)
+            if record.value('patient_id') == patient_id:
+                break
+        else:
+            raise RuntimeError('Internal database error: no patient found')
+        return record
+
     def init_readonly_fields(self):
         """Fill the read-only patient info widgets"""
-        patient_id = self.rom_model.
-
-
-
-        query = f'SELECT patient_id FROM roms WHERE rom_id=:rom_id'
-        self.cr.execute(query, {'rom_id': self.rom_id})
-        if (row := self.cr.fetchone()) is None:
-            raise RuntimeError('Database error: no patient for given ROM id')
-        patient_id = row[0]
-        vars = 'firstname,lastname,ssn,patient_code'
-        query = f'SELECT {vars} FROM patients WHERE patient_id=:patient_id'
-        self.cr.execute(query, {'patient_id': patient_id})
-        for var, val in zip(vars.split(','), self.cr.fetchone()):
-            # automatically compose the widget name and set content to corresponding variable
+        vars = ['firstname', 'lastname', 'ssn', 'patient_code']
+        for var in vars:
+            val = self.patient_record.value(var)
             widget_name = 'rdonly_' + var
             self.__dict__[widget_name].setText(val)
 
@@ -417,13 +418,17 @@ class EntryApp(QtWidgets.QMainWindow):
     @pyqt_disable_autoconv
     def _read_data(self):
         """Read input data from database"""
-        ncols = self.rom_model.columnCount()
-        rown = self.rom_idx.row()
-        headers = (self.rom_model.headerData(k, QtCore.Qt.Horizontal).value() for k in range(ncols))
-        data = (self.rom_model.data(self.rom_idx.sibling(rown, k), QtCore.Qt.EditRole) for k in range(ncols))
-        data = (x.value() if not x.isNull() else None for x in data)
-        # pick only the values which are non-NULL in the database
-        record_di = {var: val for var, val in zip(headers, data) if val is not None}
+        record_di = dict()
+        for var in self.data:
+            val = self.rom_record.value(var)
+            if not val.isValid():
+                raise RuntimeError(f'Cannot read field {var} from database')
+            elif val.isNull():
+                # NULL records mean that value is totally missing from DB
+                # (no default value); this may be due to schema changes
+                logger.info(f'NULL db value for {var}')
+            else:
+                record_di[var] = val.value()
         self.data = self.data_empty | record_di
         self.restore_forms()
 
