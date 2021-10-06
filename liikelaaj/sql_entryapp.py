@@ -8,23 +8,6 @@ Instead of saving to JSON, this version works directly with a SQL database.
 
 TODO:
 
--app should take a sql connection
-    -the database is already open at callers' end
-    -pass cursor as parameter?
-    -need to execute sql statements 
-        -mostly SELECT to fetch data, UPDATE to update it
-        -we are updating a particular record in the ROM table, corresponding to a measurement
-    -we cannot defer sql ops to the caller, since the database needs to be updated on modifications
-        -or maybe we could (via callbacks etc.) but this requires passing json back and forth
-    -when widgets are changed, we run sql updates and commit
-
--patient info -> must be taken from patients table, not rom table
-    -do we keep the rom patient info widgets, or not?
-        -can hide the tab
-    
-
--reporting -> can keep for now
-
 
 
 @author: Jussi (jnu@iki.fi)
@@ -52,20 +35,19 @@ logger = logging.getLogger(__name__)
 
 def pyqt_disable_autoconv(func):
     """Disable Qt type autoconversion for a function.
-    
+
     PyQt functions decorated with this will return QVariants from many Qt
     functions, instead of native Python types. The QVariants then need to be
-    converted manually, often using value(). 
+    converted manually, often using value().
     """
+
     def wrapper(*args, **kwargs):
         sip.enableautoconversion(QtCore.QVariant, False)
         res = func(*args, **kwargs)
         sip.enableautoconversion(QtCore.QVariant, True)
         return res
+
     return wrapper
-       
-
-
 
 
 class EntryApp(QtWidgets.QMainWindow):
@@ -106,6 +88,7 @@ class EntryApp(QtWidgets.QMainWindow):
         self.patient_model = patient_model
         self.rom_idx = rom_idx  # a QModelIndex for the desired ROM
         self.rom_record = self.rom_model.record(rom_idx.row())  # convenience
+        self.patient_record = self._get_patient_record()
         self._read_data()
         self.init_readonly_fields()
         # TODO: set locale and options if needed
@@ -113,8 +96,7 @@ class EntryApp(QtWidgets.QMainWindow):
         # loc.setNumberOptions(loc.OmitGroupSeparator |
         #            loc.RejectGroupSeparator)
 
-    @property
-    def patient_record(self):
+    def _get_patient_record(self):
         """The patient record corresponding to the ROM record"""
         patient_id = self.rom_record.value('patient_id')
         for row in range(self.patient_model.rowCount()):
@@ -122,7 +104,7 @@ class EntryApp(QtWidgets.QMainWindow):
             if record.value('patient_id') == patient_id:
                 break
         else:
-            raise RuntimeError('Internal database error: no patient found')
+            raise RuntimeError('Internal database error: patient not found')
         return record
 
     def init_readonly_fields(self):
@@ -383,16 +365,16 @@ class EntryApp(QtWidgets.QMainWindow):
         ]
         for widget in autowidgets_this:
             widget._autocalculate()
-        if self.update_dict:  # update internal data dict
+        if self.update_dict:
+            # update internal data dict
             wname = w.objectName()
             varname = self.widget_to_var[wname]
             newval = w.getVal()
             self.data[varname] = newval
-            query = f'UPDATE roms SET {varname}=:newval WHERE rom_id=:rom_id'
-            self.cr.execute(
-                query, {'varname': varname, 'newval': newval, 'rom_id': self.rom_id}
-            )
-            self.conn.commit()
+            # perform the corresponding SQL update
+            var_ind = self.rom_model.fieldIndex(varname)
+            data_ind = self.rom_model.index(self.rom_idx.row(), var_ind)
+            self.rom_model.setData(data_ind, newval, QtCore.Qt.EditRole)
 
     def keyerror_dialog(self, origkeys, newkeys):
         """Report missing / unknown keys to user."""
