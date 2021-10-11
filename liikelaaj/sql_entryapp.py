@@ -86,9 +86,7 @@ class EntryApp(QtWidgets.QMainWindow):
         self.xls_template = resource_filename('liikelaaj', Config.xls_template)
         self.rom_model = rom_model
         self.patient_model = patient_model
-        self.rom_idx = rom_idx  # a QModelIndex for the desired ROM
-        self.rom_record = self.rom_model.record(rom_idx.row())  # convenience
-        self.patient_record = self._get_patient_record()
+        self._rom_idx = rom_idx  # a QPersistentModelIndex for the desired ROM
         self._read_data()
         self.init_readonly_fields()
         # TODO: set locale and options if needed
@@ -96,7 +94,24 @@ class EntryApp(QtWidgets.QMainWindow):
         # loc.setNumberOptions(loc.OmitGroupSeparator |
         #            loc.RejectGroupSeparator)
 
-    def _get_patient_record(self):
+    def _force_close(self):
+        """Force close without confirmation"""
+        self.closeEvent = super().closeEvent
+        self.close()
+
+    @property
+    def rom_idx(self):
+        """The index (QModelIndex) of the current ROM"""
+        # we may want to do a sanity check, but the index should be there
+        return self._rom_idx
+
+    @property
+    def rom_record(self):
+        """The current ROM record"""
+        return self.rom_model.record(self.rom_idx.row())
+
+    @property
+    def patient_record(self):
         """The patient record corresponding to the ROM record"""
         patient_id = self.rom_record.value('patient_id')
         for row in range(self.patient_model.rowCount()):
@@ -104,7 +119,7 @@ class EntryApp(QtWidgets.QMainWindow):
             if record.value('patient_id') == patient_id:
                 break
         else:
-            raise RuntimeError('Internal database error: patient not found')
+            raise RuntimeError('Internal database error: no patient record')
         return record
 
     def init_readonly_fields(self):
