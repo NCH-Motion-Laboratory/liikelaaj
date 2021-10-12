@@ -53,6 +53,8 @@ def pyqt_disable_autoconv(func):
 class EntryApp(QtWidgets.QMainWindow):
     """Data entry window"""
 
+    closing = QtCore.pyqtSignal(object)
+
     def __init__(self, patient_model, rom_model, rom_idx):
         super().__init__()
         # load user interface made with Qt Designer
@@ -87,16 +89,18 @@ class EntryApp(QtWidgets.QMainWindow):
         self.rom_model = rom_model
         self.patient_model = patient_model
         self._rom_idx = rom_idx  # a QPersistentModelIndex for the desired ROM
+        self._rom_id = self.rom_record.value('rom_id')
         self._read_data()
         self.init_readonly_fields()
+        self.confirm_close = True  # used to implement force close
         # TODO: set locale and options if needed
         # loc = QtCore.QLocale()
         # loc.setNumberOptions(loc.OmitGroupSeparator |
         #            loc.RejectGroupSeparator)
 
-    def _force_close(self):
+    def force_close(self):
         """Force close without confirmation"""
-        self.closeEvent = super().closeEvent
+        self.confirm_close = False
         self.close()
 
     @property
@@ -360,9 +364,11 @@ class EntryApp(QtWidgets.QMainWindow):
 
     def closeEvent(self, event):
         """Confirm and close application."""
-        reply = confirm_dialog(ll_msgs.quit_)
-        if reply == QtWidgets.QMessageBox.YesRole:
-            # cleanup
+        if (
+            not self.confirm_close
+            or confirm_dialog(ll_msgs.quit_) == QtWidgets.QMessageBox.YesRole
+        ):
+            self.closing.emit(self._rom_id)
             event.accept()
         else:
             event.ignore()
