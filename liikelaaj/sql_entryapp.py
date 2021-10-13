@@ -366,7 +366,7 @@ class EntryApp(QtWidgets.QMainWindow):
         """Confirm and close application."""
         if (
             not self.confirm_close
-            or confirm_dialog(ll_msgs.quit_) == QtWidgets.QMessageBox.YesRole
+            or confirm_dialog(ll_msgs.quit_win) == QtWidgets.QMessageBox.YesRole
         ):
             self.closing.emit(self._rom_id)
             event.accept()
