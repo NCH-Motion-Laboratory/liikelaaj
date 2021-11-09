@@ -8,6 +8,9 @@ Instead of saving to JSON, this version works directly with a SQL database.
 
 TODO:
 
+    -reporting is broken
+        -patient id data isn't carried in data dict anymore
+
 
 
 @author: Jussi (jnu@iki.fi)
@@ -157,6 +160,18 @@ class EntryApp(QtWidgets.QMainWindow):
             self.__dict__[widget_name].setText(val)
             self.__dict__[widget_name].setEnabled(False)
         q.finish()
+
+    def get_patient_id_data(self):
+        """Get patient id data from the read-only fields as a dict.
+
+        The keys correspond to the standalone version of the application.
+        Mostly for purposes of reporting, which expects the ID data to be available.
+        """
+        return {
+                'TiedotID': self.rdonly_patient_code.text(),
+                'TiedotHetu': self.rdonly_ssn.text(),
+                'TiedotNimi': self.rdonly_firstname.text() + self.rdonly_lastname.text()
+        }
 
     def init_widgets(self):
         """Make a dict of our input widgets and install some callbacks and
@@ -481,6 +496,8 @@ class EntryApp(QtWidgets.QMainWindow):
         # uncomment to respond to template changes while running
         # importlib.reload(reporter)
         data = self.data_with_units if include_units else self.data
+        # ID data is not updated from widgets in the SQL version, so get it separately
+        data |= self.get_patient_id_data()
         rep = reporter.Report(data, self.vars_default)
         return rep.make_report(template)
 
