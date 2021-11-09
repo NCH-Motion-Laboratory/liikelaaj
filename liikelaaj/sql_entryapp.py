@@ -13,6 +13,9 @@ TODO:
 @author: Jussi (jnu@iki.fi)
 """
 
+import sys
+import datetime
+from PyQt5.QtSql import QSqlQuery
 import sip
 from PyQt5 import uic, QtCore, QtWidgets
 import webbrowser
@@ -55,7 +58,7 @@ class EntryApp(QtWidgets.QMainWindow):
 
     closing = QtCore.pyqtSignal(object)
 
-    def __init__(self, patient_model, rom_model, rom_idx):
+    def __init__(self, database, rom_id):
         super().__init__()
         # load user interface made with Qt Designer
         uifile = resource_filename('liikelaaj', 'tabbed_design_sql.ui')
@@ -81,17 +84,16 @@ class EntryApp(QtWidgets.QMainWindow):
         self._varlist = ','.join(self.data)
         # whether to update internal dict of variables on input changes
         self.update_dict = True
-        self.text_template = resource_filename('liikelaaj', Config.text_template)
+        self.text_template = resource_filename(
+            'liikelaaj', Config.text_template)
         self.isokin_text_template = resource_filename(
             'liikelaaj', Config.isokin_text_template
         )
         self.xls_template = resource_filename('liikelaaj', Config.xls_template)
-        self.rom_model = rom_model
-        self.patient_model = patient_model
-        self._rom_idx = rom_idx  # a QPersistentModelIndex for the desired ROM
-        self._rom_id = self.rom_record.value('rom_id')
-        self._read_data()
+        self.database = database
+        self.rom_id = rom_id
         self.init_readonly_fields()
+        self._read_data()
         self.confirm_close = True  # used to implement force close
         # TODO: set locale and options if needed
         # loc = QtCore.QLocale()
@@ -103,36 +105,58 @@ class EntryApp(QtWidgets.QMainWindow):
         self.confirm_close = False
         self.close()
 
-    @property
-    def rom_idx(self):
-        """The index (QModelIndex) of the current ROM"""
-        # we may want to do a sanity check, but the index should be there
-        return self._rom_idx
+    @pyqt_disable_autoconv
+    def select(self, vars):
+        """Perform select on current ROM row to get data.
+        vars is a list of desired variables.
+        Will return a list of QVariant objects. Use value() to get the value.
+        """
+        q = QSqlQuery(self.database)
+        varlist = ','.join(vars)
+        q.prepare(f'SELECT {varlist} FROM roms WHERE rom_id = :rom_id')
+        q.bindValue(':rom_id', self.rom_id)
+        if not q.exec() or not q.first():
+            err = q.lastError().databaseText()
+            raise RuntimeError(f'Could not read ROM record. SQL error: {err}')
+        results = tuple(q.value(k) for k in range(len(vars)))
+        q.finish()
+        return results
 
-    @property
-    def rom_record(self):
-        """The current ROM record"""
-        return self.rom_model.record(self.rom_idx.row())
-
-    @property
-    def patient_record(self):
-        """The patient record corresponding to the ROM record"""
-        patient_id = self.rom_record.value('patient_id')
-        for row in range(self.patient_model.rowCount()):
-            record = self.patient_model.record(row)
-            if record.value('patient_id') == patient_id:
-                break
-        else:
-            raise RuntimeError('Internal database error: no patient record')
-        return record
+    def update_rom(self, vars, values):
+        """Update ROM row with a list of fields and values"""
+        if not len(vars) == len(values):
+            raise ValueError('Arguments need to be of equal length')
+        q = QSqlQuery(self.database)
+        varlist = ','.join(f'{var} = :{var}' for var in vars)
+        q.prepare(f'UPDATE roms SET {varlist} WHERE rom_id = :rom_id')
+        q.bindValue(':rom_id', self.rom_id)
+        for var, val in zip(vars, values):
+            q.bindValue(f':{var}', val)
+        if not q.exec():
+            err = q.lastError().databaseText()
+            raise RuntimeError(
+                f'Could not update patient record. SQL error: {err}')
+        q.finish()
 
     def init_readonly_fields(self):
         """Fill the read-only patient info widgets"""
+        patient_id = self.select(['patient_id'])[0].value()
+        q = QSqlQuery(self.database)
         vars = ['firstname', 'lastname', 'ssn', 'patient_code']
-        for var in vars:
-            val = self.patient_record.value(var)
+        varlist = ','.join(vars)
+        q.prepare(
+            f'SELECT {varlist} FROM patients WHERE patient_id = :patient_id')
+        q.bindValue(':patient_id', patient_id)
+        if not q.exec() or not q.first():
+            err = q.lastError().databaseText()
+            raise RuntimeError(
+                f'Could not read patient record. SQL error: {err}')
+        for k, var in enumerate(vars):
+            val = q.value(k)
             widget_name = 'rdonly_' + var
             self.__dict__[widget_name].setText(val)
+            self.__dict__[widget_name].setEnabled(False)
+        q.finish()
 
     def init_widgets(self):
         """Make a dict of our input widgets and install some callbacks and
@@ -184,7 +208,8 @@ class EntryApp(QtWidgets.QMainWindow):
             if idx >= 0:
                 w.setCurrentIndex(idx)
             else:
-                raise ValueError(f'Tried to set combobox to invalid value {val}')
+                raise ValueError(
+                    f'Tried to set combobox to invalid value {val}')
 
         def keyPressEvent_resetOnEsc(obj, event):
             """Special event handler for spinboxes. Resets value (sets it
@@ -212,7 +237,8 @@ class EntryApp(QtWidgets.QMainWindow):
             wname = w.objectName()
             if wname[:2] == 'sp':
                 w.setLineEdit(MyLineEdit())
-                w.keyPressEvent = lambda event, w=w: keyPressEvent_resetOnEsc(w, event)
+                w.keyPressEvent = lambda event, w=w: keyPressEvent_resetOnEsc(
+                    w, event)
 
         # CheckDegSpinBoxes get a special LineEdit that catches space
         # and mouse press events
@@ -225,7 +251,8 @@ class EntryApp(QtWidgets.QMainWindow):
             """Auto calculate callback for weight normalized widgets"""
             val, weight = (w.getVal() for w in w._autoinputs)
             noval = Config.spinbox_novalue_text
-            w.setVal(noval if val == noval or weight == noval else val / weight)
+            w.setVal(noval if val == noval or weight ==
+                     noval else val / weight)
 
         # Autowidgets are special widgets with automatically computed values.
         # They must have an ._autocalculate() method which updates the widget
@@ -269,7 +296,8 @@ class EntryApp(QtWidgets.QMainWindow):
                 w.setVal = w.setText
                 w.getVal = lambda w=w: w.text().strip()
             elif wname[:2] == 'cb':  # combobox
-                w.currentIndexChanged.connect(lambda x, w=w: self.values_changed(w))
+                w.currentIndexChanged.connect(
+                    lambda x, w=w: self.values_changed(w))
                 w.setVal = lambda val, w=w: combobox_setval(w, val)
                 w.getVal = lambda w=w: combobox_getval(w)
             elif wname[:3] == 'cmt':  # comment text field
@@ -343,7 +371,8 @@ class EntryApp(QtWidgets.QMainWindow):
             self.widget_to_var[wname] = varname
 
         # try to increase font size
-        self.setStyleSheet('QWidget { font-size: %dpt;}' % Config.global_fontsize)
+        self.setStyleSheet(
+            'QWidget { font-size: %dpt;}' % Config.global_fontsize)
 
         # FIXME: make sure we always start on 1st tab
 
@@ -364,14 +393,34 @@ class EntryApp(QtWidgets.QMainWindow):
 
     def closeEvent(self, event):
         """Confirm and close application."""
-        if (
-            not self.confirm_close
-            or confirm_dialog(ll_msgs.quit_win) == QtWidgets.QMessageBox.YesRole
-        ):
-            self.closing.emit(self._rom_id)
+        if not self.confirm_close:  # force close, data will be thrown away - no checks
+            self.closing.emit(self.rom_id)
             event.accept()
+        else:  # closing via ui
+            status_ok, msg = self._validate_outputs()
+            if status_ok:
+                self.closing.emit(self.rom_id)
+                event.accept()
+            else:
+                message_dialog(msg)
+                event.ignore()
+
+    def _validate_date(self, datestr):
+        """Validate date"""
+        try:
+            datetime.datetime.strptime(datestr, '%d.%m.%Y')
+            return True
+        except ValueError:
+            return False
+
+    def _validate_outputs(self):
+        """Validate inputs before closing"""
+        if not self.data['TiedotMittaajat'].strip():
+            return False, 'Seuraavat tiedot täytyy täyttää: Mittaajat'
+        elif not self._validate_date(self.data['TiedotPvm']):
+            return False, 'Päivämäärän täytyy olla oikea ja muodossa pp.kk.vvvv'
         else:
-            event.ignore()
+            return True, ''
 
     @staticmethod
     def open_help():
@@ -393,9 +442,7 @@ class EntryApp(QtWidgets.QMainWindow):
             newval = w.getVal()
             self.data[varname] = newval
             # perform the corresponding SQL update
-            var_ind = self.rom_model.fieldIndex(varname)
-            data_ind = self.rom_model.index(self.rom_idx.row(), var_ind)
-            self.rom_model.setData(data_ind, newval, QtCore.Qt.EditRole)
+            self.update_rom([varname], [newval])
 
     def keyerror_dialog(self, origkeys, newkeys):
         """Report missing / unknown keys to user."""
@@ -408,7 +455,8 @@ class EntryApp(QtWidgets.QMainWindow):
             li.append(ll_msgs.keys_extra.format(keys=', '.join(extra_in_new)))
         if not_in_new:
             # keys in UI but not in data. this is acceptable
-            li.append(ll_msgs.keys_not_found.format(keys=', '.join(not_in_new)))
+            li.append(ll_msgs.keys_not_found.format(
+                keys=', '.join(not_in_new)))
         # only show the dialog if data was lost (not for missing values)
         if extra_in_new:
             message_dialog(''.join(li))
@@ -418,20 +466,13 @@ class EntryApp(QtWidgets.QMainWindow):
         """Append units to values"""
         return {key: f'{self.data[key]}{self.units[key]}' for key in self.data}
 
-    @pyqt_disable_autoconv
     def _read_data(self):
         """Read input data from database"""
-        record_di = dict()
-        for var in self.data:
-            val = self.rom_record.value(var)
-            if not val.isValid():
-                raise RuntimeError(f'Cannot read field {var} from database')
-            elif val.isNull():
-                # NULL records mean that value is totally missing from DB
-                # (no default value); this may be due to schema changes
-                logger.info(f'NULL db value for {var}')
-            else:
-                record_di[var] = val.value()
+        vars = list(self.data.keys())
+        # get data as QVariants, and ignore NULL ones (correspond to missing data in database)
+        qvals = self.select(vars)
+        record_di = {var: qval.value()
+                     for var, qval in zip(vars, qvals) if not qval.isNull()}
         self.data = self.data_empty | record_di
         self.restore_forms()
 
@@ -455,7 +496,8 @@ class EntryApp(QtWidgets.QMainWindow):
 
     def _save_isokin_text_report_dialog(self):
         """Create isokinetic text report and open dialog for saving it"""
-        txt = self.make_txt_report(self.isokin_text_template, include_units=False)
+        txt = self.make_txt_report(
+            self.isokin_text_template, include_units=False)
         self._save_text_report_dialog(txt, Config.isokin_text_report_prefix)
 
     def _save_default_excel_report_dialog(self):
@@ -517,7 +559,8 @@ class EntryApp(QtWidgets.QMainWindow):
         self.save_to_tmp = False
         self.update_dict = False
         for wname in self.input_widgets:
-            self.input_widgets[wname].setVal(self.data[self.widget_to_var[wname]])
+            self.input_widgets[wname].setVal(
+                self.data[self.widget_to_var[wname]])
         self.save_to_tmp = True
         self.update_dict = True
 
