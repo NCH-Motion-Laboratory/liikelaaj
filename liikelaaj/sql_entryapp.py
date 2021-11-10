@@ -8,16 +8,15 @@ Instead of saving to JSON, this version works directly with a SQL database.
 
 TODO:
 
-    -reporting is broken
-        -patient id data isn't carried in data dict anymore
-
 
 
 @author: Jussi (jnu@iki.fi)
 """
 
-import sys
+import json
+from pathlib import Path
 import datetime
+from typing import IO
 from PyQt5.QtSql import QSqlQuery
 import sip
 from PyQt5 import uic, QtCore, QtWidgets
@@ -61,7 +60,7 @@ class EntryApp(QtWidgets.QMainWindow):
 
     closing = QtCore.pyqtSignal(object)
 
-    def __init__(self, database, rom_id):
+    def __init__(self, database, rom_id, newly_created=None):
         super().__init__()
         # load user interface made with Qt Designer
         uifile = resource_filename('liikelaaj', 'tabbed_design_sql.ui')
@@ -95,6 +94,7 @@ class EntryApp(QtWidgets.QMainWindow):
         self.xls_template = resource_filename('liikelaaj', Config.xls_template)
         self.database = database
         self.rom_id = rom_id
+        self.newly_created = newly_created
         self.init_readonly_fields()
         self._read_data()
         self.confirm_close = True  # used to implement force close
@@ -106,6 +106,7 @@ class EntryApp(QtWidgets.QMainWindow):
     def force_close(self):
         """Force close without confirmation"""
         self.confirm_close = False
+
         self.close()
 
     @pyqt_disable_autoconv
@@ -145,7 +146,7 @@ class EntryApp(QtWidgets.QMainWindow):
         """Fill the read-only patient info widgets"""
         patient_id = self.select(['patient_id'])[0].value()
         q = QSqlQuery(self.database)
-        vars = ['firstname', 'lastname', 'ssn', 'patient_code']
+        vars = ['firstname', 'lastname', 'ssn', 'patient_code', 'diagnosis']
         varlist = ','.join(vars)
         q.prepare(
             f'SELECT {varlist} FROM patients WHERE patient_id = :patient_id')
@@ -164,13 +165,14 @@ class EntryApp(QtWidgets.QMainWindow):
     def get_patient_id_data(self):
         """Get patient id data from the read-only fields as a dict.
 
-        The keys correspond to the standalone version of the application.
+        The returned keys are the same as in the standalone version of the application.
         Mostly for purposes of reporting, which expects the ID data to be available.
         """
         return {
-                'TiedotID': self.rdonly_patient_code.text(),
-                'TiedotHetu': self.rdonly_ssn.text(),
-                'TiedotNimi': self.rdonly_firstname.text() + self.rdonly_lastname.text()
+            'TiedotID': self.rdonly_patient_code.text(),
+            'TiedotNimi': f'{self.rdonly_firstname.text()} {self.rdonly_lastname.text()}',
+            'TiedotHetu': self.rdonly_ssn.text(),
+            'TiedotDiag': self.rdonly_diagnosis.text()
         }
 
     def init_widgets(self):
@@ -406,16 +408,28 @@ class EntryApp(QtWidgets.QMainWindow):
         state."""
         return [key for key in self.data if self.data[key] == self.data_empty[key]]
 
+    def do_close(self, event):
+        """The actual closing ritual"""
+        # while beta testing: if ROM was newly created, we also create JSON for backup purposes
+        if self.newly_created:
+            # XXX: this will overwrite existing files, but they should be uniquely named due to
+            # timestamp in the filename
+            fn = self._compose_json_filename()
+            try:
+                self.save_file(fn)
+            except IOError:
+                pass
+        self.closing.emit(self.rom_id)
+        event.accept()
+
     def closeEvent(self, event):
         """Confirm and close application."""
         if not self.confirm_close:  # force close, data will be thrown away - no checks
-            self.closing.emit(self.rom_id)
-            event.accept()
+            self.do_close(event)
         else:  # closing via ui
             status_ok, msg = self._validate_outputs()
             if status_ok:
-                self.closing.emit(self.rom_id)
-                event.accept()
+                self.do_close(event)
             else:
                 message_dialog(msg)
                 event.ignore()
@@ -430,9 +444,7 @@ class EntryApp(QtWidgets.QMainWindow):
 
     def _validate_outputs(self):
         """Validate inputs before closing"""
-        if not self.data['TiedotMittaajat'].strip():
-            return False, 'Seuraavat tiedot täytyy täyttää: Mittaajat'
-        elif not self._validate_date(self.data['TiedotPvm']):
+        if not self._validate_date(self.data['TiedotPvm']):
             return False, 'Päivämäärän täytyy olla oikea ja muodossa pp.kk.vvvv'
         else:
             return True, ''
@@ -497,9 +509,28 @@ class EntryApp(QtWidgets.QMainWindow):
         # importlib.reload(reporter)
         data = self.data_with_units if include_units else self.data
         # ID data is not updated from widgets in the SQL version, so get it separately
-        data |= self.get_patient_id_data()
-        rep = reporter.Report(data, self.vars_default)
+        rdata = data | self.get_patient_id_data()
+        rep = reporter.Report(rdata, self.vars_default)
         return rep.make_report(template)
+
+    def _compose_json_filename(self):
+        """Make up a JSON filename"""
+        pdata = self.get_patient_id_data() | self.data
+        fn = pdata['TiedotID']
+        fn += '_'
+        fn += ''.join(reversed(pdata['TiedotNimi'].split()))
+        fn += '_'
+        fn += datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S')        
+        fn += '.json'
+        return Config.json_backup_path / fn
+
+    def save_file(self, fn):
+        """Save data into given file in utf-8 encoding"""
+        # ID data is not updated from widgets in the SQL version, so get it separately
+        rdata = self.data | self.get_patient_id_data()
+        with open(fn, 'w', encoding='utf-8') as f:
+            f.write(json.dumps(rdata, ensure_ascii=False,
+                    indent=True, sort_keys=True))
 
     def make_excel_report(self, xls_template):
         """Create Excel report from current data"""
@@ -524,12 +555,7 @@ class EntryApp(QtWidgets.QMainWindow):
 
     def _save_text_report_dialog(self, report_txt, prefix):
         """Bring up save dialog and save text report"""
-        if self.last_saved_filepath:
-            destpath = Config.text_report_path / (
-                prefix + self.last_saved_filepath.stem + '.txt'
-            )
-        else:
-            destpath = Config.data_root_path
+        destpath = Config.data_root_path
         path = self._save_dialog(destpath, Config.text_filter)
         if path is None:
             return
@@ -542,18 +568,20 @@ class EntryApp(QtWidgets.QMainWindow):
 
     def _save_excel_report_dialog(self, workbook):
         """Bring up file dialog and save Excel workbook"""
-        if self.last_saved_filepath:
-            destpath = Config.excel_report_path / (
-                Config.excel_report_prefix + self.last_saved_filepath.stem + '.xls'
-            )
-        else:
-            destpath = Config.data_root_path
+        destpath = Config.data_root_path
         path = self._save_dialog(destpath, Config.excel_filter)
         try:
             workbook.save(str(path))
             self.statusbar.showMessage(ll_msgs.status_report_saved + str(path))
         except (IOError):
             message_dialog(ll_msgs.cannot_save + str(path))
+
+    def _save_dialog(self, destpath, file_filter):
+        """Save dialog for suggested filename destpath and filter file_filter"""
+        fout = QtWidgets.QFileDialog.getSaveFileName(self, ll_msgs.save_title,
+                                                     str(destpath),
+                                                     file_filter)
+        return None if not fout[0] else Path(fout[0])
 
     def n_modified(self):
         """Count modified values."""
