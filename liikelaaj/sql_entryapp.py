@@ -82,8 +82,6 @@ class EntryApp(QtWidgets.QMainWindow):
         # save empty form (default states for widgets)
         self.read_forms()
         self.data_empty = self.data.copy()
-        # variable list, mostly for SQL statements
-        self._varlist = ','.join(self.data)
         # whether to update internal dict of variables on input changes
         self.update_dict = True
         self.text_template = resource_filename(
@@ -98,6 +96,9 @@ class EntryApp(QtWidgets.QMainWindow):
         self.init_readonly_fields()
         self._read_data()
         self.confirm_close = True  # used to implement force close
+        # for newly created data, perform initial full SQL update to insert the default values
+        if newly_created:
+            self.update_rom(self.data.keys(), self.data.values())
         # TODO: set locale and options if needed
         # loc = QtCore.QLocale()
         # loc.setNumberOptions(loc.OmitGroupSeparator |
@@ -127,7 +128,7 @@ class EntryApp(QtWidgets.QMainWindow):
         return results
 
     def update_rom(self, vars, values):
-        """Update ROM row with a list of fields and values"""
+        """Update ROM row with a list of fields and corresponding values"""
         if not len(vars) == len(values):
             raise ValueError('Arguments need to be of equal length')
         q = QSqlQuery(self.database)
