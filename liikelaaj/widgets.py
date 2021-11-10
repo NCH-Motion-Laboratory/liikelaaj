@@ -126,10 +126,13 @@ class CheckDegSpinBox(QtWidgets.QWidget):
         """
         self.setDefaultText('NR')
         self.setSuffix('°')
+        # the minimum is also the "special" value, which causes the widget to
+        # display the SpecialValueText instead of a number
         self.setMinimum(-181)
         self.setMaximum(180)
         self.degSpinBox.setValue(-181)
         self.specialtext = Config.spinbox_novalue_text
+        # this indicates the "not measured" state
         self.degSpinBox.setSpecialValueText(self.specialtext)
 
     def keyPressEvent(self, event):

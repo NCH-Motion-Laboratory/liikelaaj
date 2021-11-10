@@ -165,8 +165,8 @@ class EntryApp(QtWidgets.QMainWindow):
 
     def get_patient_id_data(self):
         """Get patient id data from the read-only fields as a dict.
-
-        The returned keys are the same as in the standalone version of the application.
+        In the SQL version, the patient data is not part of a ROM measurement anymore.
+        The returned keys are the old (deprecated) versions, as in the standalone version.
         Mostly for purposes of reporting, which expects the ID data to be available.
         """
         return {
