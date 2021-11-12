@@ -5,9 +5,18 @@ measurements.
 
 Instead of saving to JSON, this version works directly with a SQL database.
 
+Notes (see also liikelaaj.py):
 
-TODO:
+-We don't do any type conversion before SQL writes. For a given variable, the
+type of the value might change from one write to another (i.e. from string "Ei
+mitattu" to float 5.0). This works with SQLite, since it uses dynamic typing.
+For any other database engine, it will be necessary to convert the values on
+read/write, so that static types are maintained.
 
+-To write numerical variables (such as angles) we use the NUMERIC affinity. A
+side effect of the above is that all float values without a decimal part (e.g. 5.0)
+will be written into the database as integers (5). In this respect, the saved
+data differs from the original JSON format, which preservers float values.
 
 
 @author: Jussi (jnu@iki.fi)
@@ -135,6 +144,12 @@ class EntryApp(QtWidgets.QMainWindow):
         varlist = ','.join(f'{var} = :{var}' for var in vars)
         q.prepare(f'UPDATE roms SET {varlist} WHERE rom_id = :rom_id')
         q.bindValue(':rom_id', self.rom_id)
+        # XXX: note that we don't do any type conversion here. For a given
+        # variable, the type of the value might change from one write to another
+        # (i.e. from string "Ei mitattu" to float 5.0). This works with SQLite,
+        # since it uses dynamic typing. For any other database engine, it will
+        # be necessary to convert the values on read/write, so that static types
+        # are maintained.
         for var, val in zip(vars, values):
             q.bindValue(f':{var}', val)
         if not q.exec():
@@ -165,8 +180,9 @@ class EntryApp(QtWidgets.QMainWindow):
 
     def get_patient_id_data(self):
         """Get patient id data from the read-only fields as a dict.
-        In the SQL version, the patient data is not part of a ROM measurement anymore.
-        The returned keys are the old (deprecated) versions, as in the standalone version.
+        In the SQL version, the patient data is not part of ROM measurements anymore, instead
+        residing in the patients table.
+        The returned keys are identical to the old (standalone) version.
         Mostly for purposes of reporting, which expects the ID data to be available.
         """
         return {
@@ -411,8 +427,9 @@ class EntryApp(QtWidgets.QMainWindow):
 
     def do_close(self, event):
         """The actual closing ritual"""
-        # while beta testing: if ROM was newly created, we also create JSON for backup purposes
-        if self.newly_created:
+        # XXX: if ROM was newly created, we also create JSON for backup purposes
+        # this is for the "beta phase"  only
+        if True or self.newly_created:  # DEBUG: always dump JSON
             # XXX: this will overwrite existing files, but they should be uniquely named due to
             # timestamp in the filename
             fn = self._compose_json_filename()
@@ -535,7 +552,9 @@ class EntryApp(QtWidgets.QMainWindow):
 
     def make_excel_report(self, xls_template):
         """Create Excel report from current data"""
-        rep = reporter.Report(self.data, self.vars_default)
+        # ID data is not updated from widgets in the SQL version, so get it separately
+        rdata = self.data | self.get_patient_id_data()
+        rep = reporter.Report(rdata, self.vars_default)
         return rep.make_excel(xls_template)
 
     def _save_default_text_report_dialog(self):

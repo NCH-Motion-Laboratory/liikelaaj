@@ -28,11 +28,10 @@ Design notes:
 
 -for certain inputs, there is a special value indicating "not measured". For
 text inputs, this is just the empty string. For comboboxes, there is a
-"not measured" value (default). For spinboxes, Qt supports a special value
-that will be replaced by a user-defined text whenever  the widget is shown.
-We use the spinbox minimum value as the special value (which is defined to
-be far away from the range of actual measurements). When values are read from
-spinboxes, 
+distinct "not measured" value. For spinboxes, Qt supports a special value text
+that will be shown whenever the widget is at its minimum value. When values are
+read from spinboxes, the minimum value is automatically converted (by us) to
+a minimum value string.
 
 -magic mechanism for weight normalized data: widgets can have names ending
 with 'NormUn' which creates a weight unnormalized value. The
