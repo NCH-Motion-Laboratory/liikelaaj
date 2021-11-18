@@ -16,7 +16,8 @@ read/write, so that static types are maintained.
 -The SQL database uses NULL as a marker for values that are completely missing
 (usually due to schema changes). These can only be read correctly by disabling
 PyQt type autoconversion, reading data as QVariants and using isNull() to detect
-NULLs. Hence, we do all SQL reads with the autoconversion disabled.
+NULLs. (We don't actually use values that are NULL). Hence, we do all SQL reads
+with the autoconversion disabled.
 
 -The sqlite3 database writes require an EXCLUSIVE lock while they are carried
 out. This means that all SHARED locks must be released before writes can take

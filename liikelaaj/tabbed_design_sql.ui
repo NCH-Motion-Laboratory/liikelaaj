@@ -373,7 +373,7 @@
             <rect>
              <x>0</x>
              <y>0</y>
-             <width>968</width>
+             <width>1363</width>
              <height>823</height>
             </rect>
            </property>
@@ -475,6 +475,11 @@
                <widget class="QComboBox" name="cbFMSPitkatMatkat">
                 <item>
                  <property name="text">
+                  <string>N Ei vastausta</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
                   <string>6 Omatoimisesti kaikilla alustoilla ilman toisen henkilön apua</string>
                  </property>
                 </item>
@@ -506,11 +511,6 @@
                 <item>
                  <property name="text">
                   <string>C Ryömien</string>
-                 </property>
-                </item>
-                <item>
-                 <property name="text">
-                  <string>N Ei vastausta</string>
                  </property>
                 </item>
                </widget>
@@ -594,6 +594,11 @@
               </item>
               <item row="5" column="2">
                <widget class="QComboBox" name="cbKyselyPaivittainenYhtajaksMatkaIlmanApuv">
+                <item>
+                 <property name="text">
+                  <string>Ei vastausta</string>
+                 </property>
+                </item>
                 <item>
                  <property name="text">
                   <string>5 m</string>
@@ -695,6 +700,11 @@
               </item>
               <item row="4" column="2">
                <widget class="QComboBox" name="cbKyselyPaivittainenYhtajaksMatkaApuv">
+                <item>
+                 <property name="text">
+                  <string>Ei vastausta</string>
+                 </property>
+                </item>
                 <item>
                  <property name="text">
                   <string>5 m</string>
@@ -840,6 +850,11 @@ käyttö on sallittu kaikissa kohdissa.</string>
                <widget class="QComboBox" name="cbFMSLyhyetMatkat">
                 <item>
                  <property name="text">
+                  <string>N Ei vastausta</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
                   <string>6 Omatoimisesti kaikilla alustoilla ilman toisen henkilön apua</string>
                  </property>
                 </item>
@@ -871,11 +886,6 @@ käyttö on sallittu kaikissa kohdissa.</string>
                 <item>
                  <property name="text">
                   <string>C Ryömien</string>
-                 </property>
-                </item>
-                <item>
-                 <property name="text">
-                  <string>N Ei vastausta</string>
                  </property>
                 </item>
                </widget>
@@ -917,6 +927,11 @@ ja valvontaa turvallisuuden takia.</string>
                <widget class="QComboBox" name="cbFMSKoulussa">
                 <item>
                  <property name="text">
+                  <string>N Ei vastausta</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
                   <string>6 Omatoimisesti kaikilla alustoilla ilman toisen henkilön apua</string>
                  </property>
                 </item>
@@ -948,11 +963,6 @@ ja valvontaa turvallisuuden takia.</string>
                 <item>
                  <property name="text">
                   <string>C Ryömien</string>
-                 </property>
-                </item>
-                <item>
-                 <property name="text">
-                  <string>N Ei vastausta</string>
                  </property>
                 </item>
                </widget>
