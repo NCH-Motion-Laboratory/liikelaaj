@@ -3,6 +3,9 @@
 Program for input and reporting of ROM (range of motion), strength and other
 measurements.
 
+NOTE: this has been obsoleted by gaitbase.
+
+
 Design notes:
 
 -uses an ui file made with Qt Designer
@@ -119,6 +122,11 @@ class EntryApp(QtWidgets.QMainWindow):
         # loc = QtCore.QLocale()
         # loc.setNumberOptions(loc.OmitGroupSeparator |
         #            loc.RejectGroupSeparator)
+        # obsolescence warning
+        msg = 'NOTE: you should not use this program any more, except in emergencies!\n'
+        msg += 'Use the gait database (gaitbase) instead.\n'
+        msg += 'Data saved with this program will not go in to the database.\n'
+        message_dialog(msg)
 
     def init_widgets(self):
         """ Make a dict of our input widgets and install some callbacks and
