@@ -37,6 +37,7 @@ data differs from the original JSON format, which preservers float values.
 @author: Jussi (jnu@iki.fi)
 """
 
+import sys
 import json
 from pathlib import Path
 import datetime
@@ -58,6 +59,11 @@ from .widgets import (
 from . import reporter, ll_msgs
 
 logger = logging.getLogger(__name__)
+
+
+def debug_print(msg):
+    print(msg)
+    sys.stdout.flush()
 
 
 def pyqt_disable_autoconv(func):
@@ -106,8 +112,7 @@ class EntryApp(QtWidgets.QMainWindow):
         self.data_empty = self.data.copy()
         # whether to update internal dict of variables on input changes
         self.update_dict = True
-        self.text_template = resource_filename(
-            'liikelaaj', Config.text_template)
+        self.text_template = resource_filename('liikelaaj', Config.text_template)
         self.isokin_text_template = resource_filename(
             'liikelaaj', Config.isokin_text_template
         )
@@ -186,8 +191,7 @@ class EntryApp(QtWidgets.QMainWindow):
         q = QSqlQuery(self.database)
         vars = ['firstname', 'lastname', 'ssn', 'patient_code', 'diagnosis']
         varlist = ','.join(vars)
-        q.prepare(
-            f'SELECT {varlist} FROM patients WHERE patient_id = :patient_id')
+        q.prepare(f'SELECT {varlist} FROM patients WHERE patient_id = :patient_id')
         q.bindValue(':patient_id', patient_id)
         if not q.exec() or not q.first():
             self.db_failure(fatal=True)
@@ -208,8 +212,17 @@ class EntryApp(QtWidgets.QMainWindow):
             'TiedotID': self.rdonly_patient_code.text(),
             'TiedotNimi': f'{self.rdonly_firstname.text()} {self.rdonly_lastname.text()}',
             'TiedotHetu': self.rdonly_ssn.text(),
-            'TiedotDiag': self.rdonly_diagnosis.text()
+            'TiedotDiag': self.rdonly_diagnosis.text(),
         }
+
+    def eventFilter(self, source, event):
+        """Captures the FocusOut event for text widgets.
+        
+        The idea is to perform data updates when widget focus is lost.
+        """
+        if event.type() == QtCore.QEvent.FocusOut:
+            self.values_changed(source)
+        return super().eventFilter(source, event)
 
     def init_widgets(self):
         """Make a dict of our input widgets and install some callbacks and
@@ -261,8 +274,7 @@ class EntryApp(QtWidgets.QMainWindow):
             if idx >= 0:
                 w.setCurrentIndex(idx)
             else:
-                raise ValueError(
-                    f'Tried to set combobox to invalid value {val}')
+                raise ValueError(f'Tried to set combobox to invalid value {val}')
 
         def keyPressEvent_resetOnEsc(obj, event):
             """Special event handler for spinboxes. Resets value (sets it
@@ -290,8 +302,7 @@ class EntryApp(QtWidgets.QMainWindow):
             wname = w.objectName()
             if wname[:2] == 'sp':
                 w.setLineEdit(MyLineEdit())
-                w.keyPressEvent = lambda event, w=w: keyPressEvent_resetOnEsc(
-                    w, event)
+                w.keyPressEvent = lambda event, w=w: keyPressEvent_resetOnEsc(w, event)
 
         # CheckDegSpinBoxes get a special LineEdit that catches space
         # and mouse press events
@@ -304,8 +315,7 @@ class EntryApp(QtWidgets.QMainWindow):
             """Auto calculate callback for weight normalized widgets"""
             val, weight = (w.getVal() for w in w._autoinputs)
             noval = Config.spinbox_novalue_text
-            w.setVal(noval if val == noval or weight ==
-                     noval else val / weight)
+            w.setVal(noval if val == noval or weight == noval else val / weight)
 
         # Autowidgets are special widgets with automatically computed values.
         # They must have an ._autocalculate() method which updates the widget
@@ -345,18 +355,23 @@ class EntryApp(QtWidgets.QMainWindow):
                 w.getVal = lambda w=w: spinbox_getval(w)
                 w.unit = lambda w=w: w.suffix() if isint(w.getVal()) else ''
             elif wname[:2] == 'ln':  # lineedit
-                w.textChanged.connect(lambda x, w=w: self.values_changed(w))
+                # for text editors, do not perform data updates on every value change...
+                # w.textChanged.connect(lambda x, w=w: self.values_changed(w))
                 w.setVal = w.setText
                 w.getVal = lambda w=w: w.text().strip()
+                # instead, update values when focus is lost (editing completed)
+                w.installEventFilter(self)
             elif wname[:2] == 'cb':  # combobox
-                w.currentIndexChanged.connect(
-                    lambda x, w=w: self.values_changed(w))
+                w.currentIndexChanged.connect(lambda x, w=w: self.values_changed(w))
                 w.setVal = lambda val, w=w: combobox_setval(w, val)
                 w.getVal = lambda w=w: combobox_getval(w)
             elif wname[:3] == 'cmt':  # comment text field
-                w.textChanged.connect(lambda w=w: self.values_changed(w))
+                # for text editors, do not perform data updates on every value change...
+                # w.textChanged.connect(lambda w=w: self.values_changed(w))
                 w.setVal = w.setPlainText
                 w.getVal = lambda w=w: w.toPlainText().strip()
+                # instead, update values when focus is lost (editing completed)
+                w.installEventFilter(self)
             elif wname[:2] == 'xb':  # checkbox
                 w.stateChanged.connect(lambda x, w=w: self.values_changed(w))
                 w.yes_text = Config.checkbox_yestext
@@ -412,8 +427,7 @@ class EntryApp(QtWidgets.QMainWindow):
             self.widget_to_var[wname] = varname
 
         # try to increase font size
-        self.setStyleSheet(
-            'QWidget { font-size: %dpt;}' % Config.global_fontsize)
+        self.setStyleSheet('QWidget { font-size: %dpt;}' % Config.global_fontsize)
 
         # FIXME: make sure we always start on 1st tab
 
@@ -434,8 +448,12 @@ class EntryApp(QtWidgets.QMainWindow):
 
     def do_close(self, event):
         """The actual closing ritual"""
+        # Since some widgets update only when losing focus, we want to make sure
+        # they lose focus before closing the app, so that data is updated. This doesn't
+        # seem to be necessary but let's be defensive.
+        self.setFocus()
         # XXX: we may want to undo the database entry, if no values were entered
-        #if self.n_modified() == 0:
+        # if self.n_modified() == 0:
         # XXX: if ROM was newly created, we also create JSON for backup purposes
         # this is for the "beta phase"  only
         if self.BACKUP_NEW_ROMS and self.newly_created:
@@ -512,8 +530,7 @@ class EntryApp(QtWidgets.QMainWindow):
             li.append(ll_msgs.keys_extra.format(keys=', '.join(extra_in_new)))
         if not_in_new:
             # keys in UI but not in data. this is acceptable
-            li.append(ll_msgs.keys_not_found.format(
-                keys=', '.join(not_in_new)))
+            li.append(ll_msgs.keys_not_found.format(keys=', '.join(not_in_new)))
         # only show the dialog if data was lost (not for missing values)
         if extra_in_new:
             message_dialog(''.join(li))
@@ -528,8 +545,9 @@ class EntryApp(QtWidgets.QMainWindow):
         vars = list(self.data.keys())
         # get data as QVariants, and ignore NULL ones (which correspond to missing data in database)
         qvals = self.select(vars)
-        record_di = {var: qval.value()
-                     for var, qval in zip(vars, qvals) if not qval.isNull()}
+        record_di = {
+            var: qval.value() for var, qval in zip(vars, qvals) if not qval.isNull()
+        }
         self.data = self.data_empty | record_di
         self.restore_forms()
 
@@ -549,8 +567,7 @@ class EntryApp(QtWidgets.QMainWindow):
         # ID data is not updated from widgets in the SQL version, so get it separately
         rdata = self.data | self.get_patient_id_data()
         with open(fn, 'w', encoding='utf-8') as f:
-            f.write(json.dumps(rdata, ensure_ascii=False,
-                    indent=True, sort_keys=True))
+            f.write(json.dumps(rdata, ensure_ascii=False, indent=True, sort_keys=True))
 
     def make_txt_report(self, template, include_units=True):
         """Create text report from current data"""
@@ -576,8 +593,7 @@ class EntryApp(QtWidgets.QMainWindow):
 
     def _save_isokin_text_report_dialog(self):
         """Create isokinetic text report and open dialog for saving it"""
-        txt = self.make_txt_report(
-            self.isokin_text_template, include_units=False)
+        txt = self.make_txt_report(self.isokin_text_template, include_units=False)
         self._save_text_report_dialog(txt, Config.isokin_text_report_prefix)
 
     def _save_default_excel_report_dialog(self):
@@ -610,9 +626,9 @@ class EntryApp(QtWidgets.QMainWindow):
 
     def _save_dialog(self, destpath, file_filter):
         """Save dialog for suggested filename destpath and filter file_filter"""
-        fout = QtWidgets.QFileDialog.getSaveFileName(self, ll_msgs.save_title,
-                                                     str(destpath),
-                                                     file_filter)
+        fout = QtWidgets.QFileDialog.getSaveFileName(
+            self, ll_msgs.save_title, str(destpath), file_filter
+        )
         return None if not fout[0] else Path(fout[0])
 
     def n_modified(self):
@@ -636,8 +652,7 @@ class EntryApp(QtWidgets.QMainWindow):
         self.save_to_tmp = False
         self.update_dict = False
         for wname in self.input_widgets:
-            self.input_widgets[wname].setVal(
-                self.data[self.widget_to_var[wname]])
+            self.input_widgets[wname].setVal(self.data[self.widget_to_var[wname]])
         self.save_to_tmp = True
         self.update_dict = True
 
