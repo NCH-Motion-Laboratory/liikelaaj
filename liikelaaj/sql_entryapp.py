@@ -448,10 +448,6 @@ class EntryApp(QtWidgets.QMainWindow):
 
     def do_close(self, event):
         """The actual closing ritual"""
-        # Since some widgets update only when losing focus, we want to make sure
-        # they lose focus before closing the app, so that data is updated. This doesn't
-        # seem to be necessary but let's be defensive.
-        self.setFocus()
         # XXX: we may want to undo the database entry, if no values were entered
         # if self.n_modified() == 0:
         # XXX: if ROM was newly created, we also create JSON for backup purposes
@@ -469,6 +465,9 @@ class EntryApp(QtWidgets.QMainWindow):
 
     def closeEvent(self, event):
         """Confirm and close application."""
+        # Since some widgets update only when losing focus, we want to make sure
+        # they lose focus before closing the app, so that data is updated.
+        self.setFocus()
         if not self.confirm_close:  # force close
             self.do_close(event)
         else:  # closing via ui
