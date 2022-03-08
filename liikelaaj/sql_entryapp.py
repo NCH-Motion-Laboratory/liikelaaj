@@ -127,7 +127,7 @@ class EntryApp(QtWidgets.QMainWindow):
             datestr = datetime.datetime.now().strftime('%d.%m.%Y')
             self.lnTiedotPvm.setText(datestr)
             # for a newly created entry, initialize the database row w/ default values
-            self.update_rom(self.data.keys(), self.data.values())
+            self.values_changed(self.lnTiedotPvm)
         else:
             # for existing entry, read values from database
             self._read_data()
@@ -488,7 +488,8 @@ class EntryApp(QtWidgets.QMainWindow):
 
     def _validate_outputs(self):
         """Validate inputs before closing"""
-        if not self._validate_date(self.data['TiedotPvm']):
+        date = self.data['TiedotPvm']
+        if not self._validate_date(date):
             return False, 'Päivämäärän täytyy olla oikea ja muodossa pp.kk.vvvv'
         else:
             return True, ''
